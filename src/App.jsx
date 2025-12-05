@@ -37,7 +37,7 @@ const ShiftScheduleManager = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
     const [database, setDatabase] = useState(null);
-    const [isStatsVisible, setIsStatsVisible] = useState(true); // 新增：控制統計區塊顯示
+    const [isStatsVisible, setIsStatsVisible] = useState(true);
 
     const holidays = useMemo(() => ({
         '2025-01-01': '元旦', '2025-01-28': '除夕', '2025-01-29': '春節', '2025-02-28': '和平紀念日',
@@ -86,8 +86,18 @@ const ShiftScheduleManager = () => {
                 
                 if (!snapshot.exists()) {
                     const initialShifts = generateInitialShifts();
-                    await shiftsRef.set(initialShifts);
-                    showToast('已初始化班表資料', 'success');
+                    
+                    // --- 修正：初始化時將資料轉換為巢狀結構 ---
+                    const nestedShifts = {};
+                    Object.entries(initialShifts).forEach(([date, name]) => {
+                        const [year, month] = date.split('-');
+                        if (!nestedShifts[year]) nestedShifts[year] = {};
+                        if (!nestedShifts[year][month]) nestedShifts[year][month] = {};
+                        nestedShifts[year][month][date] = name;
+                    });
+
+                    await shiftsRef.set(nestedShifts);
+                    showToast('已初始化班表資料 (新結構)', 'success');
                 }
 
                 setIsInitialized(true);
@@ -131,7 +141,26 @@ const ShiftScheduleManager = () => {
         shiftsRef.on('value', (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                setShifts(data);
+                // --- 修正：讀取時判斷並攤平資料 ---
+                const flatShifts = {};
+                // 簡單判斷是否為巢狀結構 (檢查 key 是否為年份數字)
+                const isNested = Object.keys(data).some(key => /^\d{4}$/.test(key));
+
+                if (isNested) {
+                    Object.keys(data).forEach(year => {
+                        if (data[year]) {
+                            Object.keys(data[year]).forEach(month => {
+                                if (data[year][month]) {
+                                    Object.assign(flatShifts, data[year][month]);
+                                }
+                            });
+                        }
+                    });
+                    setShifts(flatShifts);
+                } else {
+                    // 相容舊格式
+                    setShifts(data);
+                }
             }
         });
 
@@ -180,7 +209,9 @@ const ShiftScheduleManager = () => {
             const currentPerson = shifts[date];
             const newPerson = currentPerson === '宇軒' ? '靖翰' : '宇軒';
             
-            await database.ref(`shifts/${date}`).set(newPerson);
+            // --- 修正：寫入時使用分層路徑 ---
+            const [year, month] = date.split('-');
+            await database.ref(`shifts/${year}/${month}/${date}`).set(newPerson);
             
             if (originalShifts[date] !== newPerson) {
                 await database.ref(`modifiedDates/${date}`).set({
@@ -319,20 +350,16 @@ const ShiftScheduleManager = () => {
                     } ${isModified ? 'border-red-600 border-2 sm:border-4' : isPending ? 'border-yellow-500 border-2 sm:border-4' : isLocked ? 'border-purple-600 border-2 sm:border-4' : 'border-gray-200'}`}
                     onClick={() => setSelectedDate(dateKey)}
                 >
-                    {/* 日期數字移到右上角 */}
                     <div className={`absolute top-0.5 right-1 text-xs sm:text-sm font-bold ${(holiday || isWeekend) ? 'text-red-700' : 'text-gray-700'}`}>
                         {day}
                     </div>
 
-                    {/* 名字標籤 */}
                     <div className={`text-xs sm:text-sm font-bold px-2 py-0.5 rounded-full ${isYuxuan ? 'bg-blue-600 text-white' : person === '靖翰' ? 'bg-green-600 text-white' : 'bg-gray-400 text-white'}`}>
                         {person}
                     </div>
 
-                    {/* 節日標示 */}
                     {holiday && <div className="absolute bottom-0.5 right-1 text-xs">🎉</div>}
 
-                    {/* 狀態圖示：固定在左上角，不會擋住日期 */}
                     {(isModified || isPending || isLocked) && (
                         <div className="absolute top-0.5 left-0.5 flex gap-0.5">
                             {isModified && (
