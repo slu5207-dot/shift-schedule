@@ -37,6 +37,14 @@ shifts 的 `.validate` **完全保留原式** `newData.isString() && newData.val
 
 只有日後由管理者發布 Rules，資料庫端限制才會生效；本次不發布。
 
+## GitHub Actions 自動驗證
+
+`.github/workflows/firebase-rules.yml` 會在對 main 的 PR 建立、更新或重開時執行，包含 Draft PR。使用 GitHub-hosted Ubuntu 24.04、Node.js 22 與 Java 21，明確權限只有 `contents: read`，checkout 不保留憑證。
+
+流程執行 `npm ci`、build、lint、15 項合約測試，安裝固定版本 Firebase CLI 14.26.0，透過既有 `firebase.json`／`database.rules.json` 啟動 Database Emulator，再執行 `tests/rules.emulator.mjs`。專案固定是 `demo-shift-schedule`，測試只連 `127.0.0.1:9000`，不用 Firebase 密碼、Admin SDK 金鑰或雲端測試專案。最後執行 14 組瀏覽器模擬測試；Playwright 裝在 runner 暫存目錄，不更動專案依賴與鎖檔。沒有部署步驟。
+
+已確認[官方 Emulator 與全部既有檢查執行成功](https://github.com/slu5207-dot/shift-schedule/actions/runs/41843177693)。失敗與修正記錄、剩餘風險見 `TEST_RESULTS.md`。不需要使用者手動安裝工具或執行指令；後續修改 PR 會自動重測。
+
 ## 本機測試與 Preview
 
 ```bash
@@ -56,13 +64,13 @@ npm run test:browser
 
 測試啟動 `127.0.0.1:4174`，使用記憶體資料，攔截 Auth HTTP 回應並拒絕其他對外連線。正式程式不會匯入測試 mock，也沒有新增產品依賴。
 
-官方 Rules 引擎驗證是可選的本機命令，需要已可使用的 Firebase CLI、Emulator 與 Java：
+官方 Rules 引擎驗證已由 Actions 自動執行；若開發者需要自行重現，可用以下本機命令（需 Firebase CLI、Emulator 與 Java）：
 
 ```bash
 npx firebase-tools emulators:exec --project demo-shift-schedule --only database "npm run test:rules:emulator"
 ```
 
-測試固定連到 `127.0.0.1:9000`，沒有管理者金鑰或正式專案設定。直接執行 `npm run test:rules:emulator` 而本機未啟動 Emulator，會明確失敗並表示未進行真實 Rules 驗證，不會略過後當成通過。工具不可用時，以 `TEST_RESULTS.md` 記錄限制；不要求另建雲端測試專案。
+測試固定連到 `127.0.0.1:9000`，沒有管理者金鑰或正式專案設定。直接執行 `npm run test:rules:emulator` 而本機未啟動 Emulator，會明確失敗並表示未進行真實 Rules 驗證，不會略過後當成通過。本機工具不可用時直接查看 PR 的 Actions 結果，不要求使用者另裝工具或建立雲端測試專案。
 
 本機人工操作 Emulator 時，複製 `.env.example` 為 `.env.local`，設定測試 Email 並保持 `VITE_USE_FIREBASE_EMULATORS=true`，啟動本機 Auth／Database Emulator；測試帳號的 UID 使用上述指定值。此模式強制使用 `demo-shift-schedule`，不沿用正式設定。
 
@@ -72,9 +80,9 @@ npx firebase-tools emulators:exec --project demo-shift-schedule --only database 
 
 這是建置設定檢查，不會建立專案或連線驗證雲端資源；Firebase 實際權限仍由各資料庫的 Rules 決定。`VERCEL_ENV=production` 不套用 Preview 檢查，正式建置維持正常；`VERCEL=1` 卻未標明 production 時則保守套用檢查。若從其他系統提供 prebuilt artifacts，仍須先以正確的 `VERCEL_ENV` 執行此建置，不能略過檢查。既有已部署 Preview 不會自動被撤除，本輪不使用它做寫入測試。
 
-## Emulator 不可用時：Console Rules Playground
+## 可選人工複查：Console Rules Playground
 
-本環境有 Java 21，但沒有 Firebase CLI／Emulator JAR，離線取得 CLI 回傳 `ENOTCACHED`，網路政策也未開放下載。官方測試目前只到本機連線前置檢查，**沒有執行官方 Rules 引擎案例**。
+Codex 執行環境仍受下載限制，但官方 Emulator 已改在 GitHub Actions 完成驗證。下列 Playground 操作僅供額外人工複查，不是本次驗收的必要手動步驟。
 
 最簡單的人工替代方式：
 
@@ -98,7 +106,7 @@ npx firebase-tools emulators:exec --project demo-shift-schedule --only database 
 
 指定 UID 是 `ceockx7WIPfKWZuyqOaxImBdQ1P2`，其他 UID 可填合成值 `other-test-uid`。
 
-**Playground 的單一路徑 Write 不能代替多路徑 `update()` 的原子性驗證。** 不要把帶有斜線鍵的 JSON 貼到根路徑當成多路徑更新，那是不同請求。本次多路徑授權／整筆成功與拒絕仍需用本機 Emulator 腳本驗證；在完成前，尚未達到正式上線門檻。
+**Playground 的單一路徑 Write 不能代替多路徑 `update()` 的原子性驗證。** 不要把帶有斜線鍵的 JSON 貼到根路徑當成多路徑更新，那是不同請求。本次已由 Actions 的官方 Emulator 驗證多路徑更新成功與整筆拒絕，不再以合約測試代替官方驗證。
 
 ## 環境設定與上線前必要操作
 
@@ -108,13 +116,13 @@ npx firebase-tools emulators:exec --project demo-shift-schedule --only database 
 
 正式上線前需由使用者／管理者完成：
 
-1. 審查 Draft PR 與測試限制。在有工具的環境補跑上述本機 Emulator，確認真實 Rules 引擎的型別驗證、父節點拒絕與逐日期原子更新；不需要新增 Firebase 專案。
+1. 審查 Draft PR 與 Actions 結果。官方 Rules 驗證已完成；另外評估 `npm ci` 回報的既有依賴弱點（含 critical），本次未升級產品依賴。無需手動安裝 Emulator 或新增 Firebase 專案。
 2. 確認正式 Authentication 已啟用 Email／Password，指定 UID 的 Email 正確；在 Vercel **Production** 設定 `VITE_EDITOR_EMAIL`，並關閉或移除 `VITE_USE_FIREBASE_EMULATORS`。不把密碼放進環境變數。
 3. 另外確認正式上線時段。備份目前資料與 Rules，再由管理者在正式專案發布本次 Rules。優先用 Rules Simulator 驗證，不為測試修改正式班表。
 4. Rules 生效後才依核准流程合併至 `main` 並正式發布前端。這兩步之間舊網站仍可閱讀，但未登入編輯會被拒絕，需安排短暫停止編輯。
 5. 驗收公開閱讀與登入／登出；正式班表的實際修改留給另經授權的正常操作。回滾前端時仍保留嚴格 Rules，不重新開放匿名寫入。
 
-本次只推送工作分支並建立 Draft PR，不合併 main、不發布正式 Rules、不部署正式網站。
+本次只推送工作分支並更新原 Draft PR，不合併 main、不發布正式 Rules、不部署正式網站。
 
 ## 變更檔案
 
@@ -123,5 +131,6 @@ npx firebase-tools emulators:exec --project demo-shift-schedule --only database 
 - `database.rules.json`、`firebase.json`：日期層級 Rules 與本機 Emulator 設定。
 - `vite.config.js`、`vercel.json`：Preview 僅放行明確隔離設定；此工作分支仍停用自動部署。
 - `.env.example`、`.gitignore`：環境設定範例與忽略本機設定／暫存。
-- `package.json`、`eslint.config.js`、`tests/security.test.mjs`、`tests/browser.mjs`、`tests/firebase.mock.js`、`tests/rules.emulator.mjs`：本機合約、瀏覽器與可選官方 Emulator 測試；無新增產品依賴、無套件鎖檔變更。
+- `package.json`、`eslint.config.js`、`tests/security.test.mjs`、`tests/browser.mjs`、`tests/firebase.mock.js`、`tests/rules.emulator.mjs`：合約、瀏覽器與官方 Emulator 測試；無新增產品依賴、無套件鎖檔變更。
+- `.github/workflows/firebase-rules.yml`：以唯讀權限在 PR 自動執行官方 Emulator 與既有檢查。
 - `README.md`、`TEST_RESULTS.md`：說明與實際測試記錄。

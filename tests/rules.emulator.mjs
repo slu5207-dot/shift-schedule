@@ -1,4 +1,4 @@
-// 可選的官方 Rules 引擎驗證：固定連本機 demo Emulator，沒有正式專案設定。
+// 官方 Rules 引擎驗證：固定連本機 demo Emulator，沒有正式專案設定。
 import assert from 'node:assert/strict';
 import { createConnection } from 'node:net';
 import { after, test } from 'node:test';
