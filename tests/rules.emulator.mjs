@@ -42,15 +42,15 @@ test('官方 Firebase Rules：讀取、UID、資料型別、父節點拒絕與�
     };
     const denied = operation => assert.rejects(operation, /permission.denied/i);
     for (const db of [anonymous, other, editor]) {
-        for (const path of ['', 'unknown']) await denied(() => get(ref(db, path)));
+        for (const path of ['', 'unknown']) await denied(() => get(ref(db, path || undefined)));
     }
     for (const [path, value] of Object.entries(records)) {
-        await set(ref(editor, path), value);
+        await set(ref(editor, path || undefined), value);
         for (const db of [anonymous, other]) {
-            assert.equal((await get(ref(db, path))).exists(), true);
-            await denied(() => set(ref(db, path), value));
+            assert.equal((await get(ref(db, path || undefined))).exists(), true);
+            await denied(() => set(ref(db, path || undefined), value));
             await denied(() => set(ref(db, `${path}-new`), value));
-            await denied(() => remove(ref(db, path)));
+            await denied(() => remove(ref(db, path || undefined)));
         }
     }
     for (const node of ['shifts', 'modifiedDates', 'pendingDates', 'lockedDates']) {
@@ -61,8 +61,8 @@ test('官方 Firebase Rules：讀取、UID、資料型別、父節點拒絕與�
     for (const value of ['甲'.repeat(20), 123, true, { name: '測試甲' }]) await denied(() => set(ref(editor, shiftPath), value));
     await denied(() => remove(ref(editor, shiftPath)));
     for (const path of ['', 'shifts', 'shifts/2026', 'shifts/2026/11', 'modifiedDates', 'pendingDates', 'lockedDates']) {
-        await denied(() => set(ref(editor, path), { overwrite: true }));
-        await denied(() => remove(ref(editor, path)));
+        await denied(() => set(ref(editor, path || undefined), { overwrite: true }));
+        await denied(() => remove(ref(editor, path || undefined)));
         if (path) await denied(() => update(ref(editor), { [path]: null }));
     }
     const change = {
@@ -83,8 +83,8 @@ test('官方 Firebase Rules：讀取、UID、資料型別、父節點拒絕與�
         assert.equal((await get(ref(anonymous, shiftPath))).val(), '測試乙');
     }
     for (const path of Object.keys(records).filter(path => !path.startsWith('shifts/'))) {
-        await set(ref(editor, path), records[path]);
-        await remove(ref(editor, path)); // 取消最後一筆標記也必須可用。
+        await set(ref(editor, path || undefined), records[path]);
+        await remove(ref(editor, path || undefined)); // 取消最後一筆標記也必須可用。
     }
     await update(ref(editor), { [shiftPath]: '測試甲', [`modifiedDates/${date}`]: null, [`pendingDates/${date}`]: null });
     await denied(() => set(ref(anonymous, shiftPath), '測試乙')); // 登出後的無驗證請求。
