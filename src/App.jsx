@@ -1,5 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, Repeat, X, Menu, Wifi, WifiOff, Lock, Unlock } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { AlertCircle, ChevronLeft, ChevronRight, Repeat, X, Menu, Wifi, WifiOff, Lock } from 'lucide-react';
+
+import { db as database, auth, authReady } from './firebase';
+import { EDITOR_UID } from './firebaseConfig';
 
 function generateInitialShifts() {
     const schedule = {};
@@ -36,7 +39,14 @@ const ShiftScheduleManager = () => {
     const [toast, setToast] = useState({ message: '', visible: false, type: 'success' });
     const [isConnected, setIsConnected] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
-    const [database, setDatabase] = useState(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [isPasswordOpen, setIsPasswordOpen] = useState(false);
+    const [password, setPassword] = useState('');
+    const [loginError, setLoginError] = useState('');
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
+    const [isSigningOut, setIsSigningOut] = useState(false);
+    const editEnabled = useRef(false);
+    const editorEmail = import.meta.env.VITE_EDITOR_EMAIL?.trim();
     const [isStatsVisible, setIsStatsVisible] = useState(true);
 
     const holidays = useMemo(() => ({
@@ -51,159 +61,146 @@ const ShiftScheduleManager = () => {
         return (day + 1) % 7;
     }, [selectedYear, selectedMonth]);
 
-    useEffect(() => {
-        const initFirebase = async () => {
-            try {
-                const firebaseConfig = {
-                    apiKey: "AIzaSyBmSPNAl4MLOePqArUFHaIXPsv-26a4cBo",
-                    authDomain: "shift-schedule-a6daf.firebaseapp.com",
-                    databaseURL: "https://shift-schedule-a6daf-default-rtdb.asia-southeast1.firebasedatabase.app",
-                    projectId: "shift-schedule-a6daf",
-                    storageBucket: "shift-schedule-a6daf.firebasestorage.app",
-                    messagingSenderId: "780365132523",
-                    appId: "1:780365132523:web:d7ffaecf9dd33037fe44ae"
-                };
-
-                if (typeof window.firebase === 'undefined') {
-                    console.error('Firebase SDK 尚未載入');
-                    return;
-                }
-
-                if (!window.firebase.apps.length) {
-                    window.firebase.initializeApp(firebaseConfig);
-                }
-
-                const db = window.firebase.database();
-                setDatabase(db);
-
-                const connectedRef = db.ref('.info/connected');
-                connectedRef.on('value', (snapshot) => {
-                    setIsConnected(snapshot.val() === true);
-                });
-
-                const shiftsRef = db.ref('shifts');
-                const snapshot = await shiftsRef.once('value');
-                
-                if (!snapshot.exists()) {
-                    const initialShifts = generateInitialShifts();
-                    
-                    // --- 修正：初始化時將資料轉換為巢狀結構 ---
-                    const nestedShifts = {};
-                    Object.entries(initialShifts).forEach(([date, name]) => {
-                        const [year, month] = date.split('-');
-                        if (!nestedShifts[year]) nestedShifts[year] = {};
-                        if (!nestedShifts[year][month]) nestedShifts[year][month] = {};
-                        nestedShifts[year][month][date] = name;
-                    });
-
-                    await shiftsRef.set(nestedShifts);
-                    showToast('已初始化班表資料 (新結構)', 'success');
-                }
-
-                setIsInitialized(true);
-            } catch (error) {
-                console.error('Firebase 初始化失敗:', error);
-                showToast('連線失敗，請檢查網路', 'error');
-            }
-        };
-
-        const loadFirebaseSDK = () => {
-            if (typeof window.firebase !== 'undefined') {
-                initFirebase();
-                return;
-            }
-
-            const script1 = document.createElement('script');
-            script1.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js';
-            script1.async = true;
-
-            const script2 = document.createElement('script');
-            script2.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js';
-            script2.async = true;
-
-            script1.onload = () => {
-                script2.onload = () => {
-                    initFirebase();
-                };
-                document.head.appendChild(script2);
-            };
-
-            document.head.appendChild(script1);
-        };
-
-        loadFirebaseSDK();
+    const showToast = useCallback((message, type = 'success') => {
+        setToast({ message, visible: true, type });
+        setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
     }, []);
 
     useEffect(() => {
-        if (!database || !isInitialized) return;
+        let active = true;
+        let unsubscribe = () => {};
+        authReady.then(() => {
+            if (!active) return;
+            unsubscribe = auth.onAuthStateChanged(user => {
+                const allowed = user?.uid === EDITOR_UID;
+                editEnabled.current = allowed;
+                setIsEditing(allowed);
+                if (!allowed) setSelectedDate(null);
+            });
+        }).catch(() => {
+            if (active) showToast('驗證功能無法初始化，目前僅供瀏覽', 'error');
+        });
+        return () => { active = false; unsubscribe(); };
+    }, [showToast]);
 
+    useEffect(() => {
+        const connectedRef = database.ref('.info/connected');
+        const onConnected = snapshot => setIsConnected(snapshot.val() === true);
+        connectedRef.on('value', onConnected);
+        const onReadError = () => {
+            showToast('班表讀取失敗，請檢查網路與讀取權限', 'error');
+        };
         const shiftsRef = database.ref('shifts');
         shiftsRef.on('value', (snapshot) => {
             const data = snapshot.val();
-            if (data) {
-                // --- 修正：讀取時判斷並攤平資料 ---
-                const flatShifts = {};
-                // 簡單判斷是否為巢狀結構 (檢查 key 是否為年份數字)
-                const isNested = Object.keys(data).some(key => /^\d{4}$/.test(key));
-
-                if (isNested) {
-                    Object.keys(data).forEach(year => {
-                        if (data[year]) {
-                            Object.keys(data[year]).forEach(month => {
-                                if (data[year][month]) {
-                                    Object.assign(flatShifts, data[year][month]);
-                                }
-                            });
-                        }
-                    });
-                    setShifts(flatShifts);
-                } else {
-                    // 相容舊格式
-                    setShifts(data);
+            // 保留舊的平面格式，巢狀資料優先；可安全讀取兩種格式混合的資料。
+            const flatShifts = Object.fromEntries(
+                Object.entries(data || {}).filter(([key]) => /^\d{4}-\d{2}-\d{2}$/.test(key))
+            );
+            Object.entries(data || {}).forEach(([year, months]) => {
+                if (/^\d{4}$/.test(year) && months) {
+                    Object.values(months).forEach(dates => Object.assign(flatShifts, dates));
                 }
-            }
-        });
+            });
+            // 原始班表只作畫面預設值，空白資料庫也不會自動寫入。
+            setShifts({ ...originalShifts, ...flatShifts });
+            setIsInitialized(true);
+        }, onReadError);
 
         const modifiedRef = database.ref('modifiedDates');
         modifiedRef.on('value', (snapshot) => {
             const data = snapshot.val();
             setModifiedDates(data || {});
-        });
+        }, onReadError);
 
         const pendingRef = database.ref('pendingDates');
         pendingRef.on('value', (snapshot) => {
             const data = snapshot.val();
             setPendingDates(data || {});
-        });
+        }, onReadError);
 
         const lockedRef = database.ref('lockedDates');
         lockedRef.on('value', (snapshot) => {
             const data = snapshot.val();
             setLockedDates(data || {});
-        });
+        }, onReadError);
 
         return () => {
+            connectedRef.off('value', onConnected);
             shiftsRef.off();
             modifiedRef.off();
             pendingRef.off();
             lockedRef.off();
         };
-    }, [database, isInitialized]);
+    }, [showToast, originalShifts]);
 
     useEffect(() => {
         localStorage.setItem('currentUser', currentUser);
     }, [currentUser]);
 
-    const showToast = (message, type = 'success') => {
-        setToast({ message, visible: true, type });
-        setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+    const login = async (event) => {
+        event.preventDefault();
+        if (isAuthenticating) return;
+        setLoginError('');
+        if (!editorEmail) {
+            setLoginError('尚未設定編輯帳號，請聯絡網站管理者。');
+            setPassword('');
+            return;
+        }
+        setIsAuthenticating(true);
+        try {
+            await authReady;
+            const credential = await auth.signInWithEmailAndPassword(editorEmail, password);
+            if (credential.user.uid !== EDITOR_UID) {
+                await auth.signOut();
+                setLoginError('此帳號沒有編輯權限。');
+                return;
+            }
+            setIsPasswordOpen(false);
+            showToast('已進入編輯模式');
+        } catch (error) {
+            const messages = {
+                'auth/too-many-requests': '嘗試次數過多，請稍後再試。',
+                'auth/network-request-failed': '無法連線，請檢查網路後再試。',
+            };
+            setLoginError(messages[error.code] || '密碼錯誤或帳號無法使用，請重新輸入。');
+        } finally {
+            setPassword('');
+            setIsAuthenticating(false);
+        }
+    };
+
+    const logout = async () => {
+        // 先關閉前端寫入入口，再等待 Firebase 清除登入狀態。
+        editEnabled.current = false;
+        setIsEditing(false);
+        setSelectedDate(null);
+        setPassword('');
+        setIsSigningOut(true);
+        try {
+            await auth.signOut();
+            showToast('已回到唯讀模式');
+        } catch {
+            showToast('已停止編輯，但登出失敗，請重新整理頁面', 'error');
+        } finally {
+            setIsSigningOut(false);
+        }
+    };
+
+    const canWrite = () => {
+        if (!editEnabled.current || auth.currentUser?.uid !== EDITOR_UID) {
+            showToast('請先點選「編輯班表」並輸入密碼', 'error');
+            return false;
+        }
+        if (!isConnected) {
+            showToast('尚未連線到資料庫', 'error');
+            return false;
+        }
+        return true;
     };
 
     const toggleShift = async (date) => {
-        if (!database) {
-            showToast('尚未連線到資料庫', 'error');
-            return;
-        }
+        if (!canWrite()) return;
 
         try {
             const currentPerson = shifts[date];
@@ -211,21 +208,17 @@ const ShiftScheduleManager = () => {
             
             // --- 修正：寫入時使用分層路徑 ---
             const [year, month] = date.split('-');
-            await database.ref(`shifts/${year}/${month}/${date}`).set(newPerson);
-            
-            if (originalShifts[date] !== newPerson) {
-                await database.ref(`modifiedDates/${date}`).set({
+            await database.ref().update({
+                [`shifts/${year}/${month}/${date}`]: newPerson,
+                [`modifiedDates/${date}`]: originalShifts[date] !== newPerson ? {
                     from: originalShifts[date],
                     to: newPerson,
                     modifiedBy: currentUser,
                     timestamp: new Date().toISOString()
-                });
-            } else {
-                await database.ref(`modifiedDates/${date}`).remove();
-            }
-            
-            await database.ref(`pendingDates/${date}`).remove();
-            
+                } : null,
+                [`pendingDates/${date}`]: null,
+            });
+
             showToast(`已調整班別為 ${newPerson}`, 'info');
         } catch (error) {
             console.error('更新失敗:', error);
@@ -234,10 +227,7 @@ const ShiftScheduleManager = () => {
     };
 
     const togglePending = async (date) => {
-        if (!database) {
-            showToast('尚未連線到資料庫', 'error');
-            return;
-        }
+        if (!canWrite()) return;
 
         try {
             const isCurrentlyPending = !!pendingDates[date];
@@ -259,10 +249,7 @@ const ShiftScheduleManager = () => {
     };
 
     const toggleLocked = async (date) => {
-        if (!database) {
-            showToast('尚未連線到資料庫', 'error');
-            return;
-        }
+        if (!canWrite()) return;
 
         try {
             const isCurrentlyLocked = !!lockedDates[date];
@@ -387,6 +374,24 @@ const ShiftScheduleManager = () => {
 
     return (
         <div className="min-h-screen bg-gray-100 sm:p-4 pb-20">
+            {isPasswordOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <form onSubmit={login} role="dialog" aria-modal="true" aria-labelledby="editor-title" className="bg-white rounded-xl w-full max-w-sm p-6">
+                        <h2 id="editor-title" className="text-xl font-bold mb-4">編輯班表</h2>
+                        <label htmlFor="editor-password" className="block text-sm mb-2">編輯密碼</label>
+                        <input id="editor-password" type="password" autoComplete="current-password" autoFocus required
+                            value={password} onChange={event => setPassword(event.target.value)} disabled={isAuthenticating}
+                            className="w-full p-2 border rounded mb-3" />
+                        {loginError && <p role="alert" className="text-sm text-red-700 mb-3">{loginError}</p>}
+                        <div className="flex gap-2">
+                            <button type="submit" disabled={isAuthenticating} className="flex-1 py-2 bg-indigo-600 text-white rounded disabled:opacity-50">
+                                {isAuthenticating ? '驗證中…' : '確認編輯'}
+                            </button>
+                            <button type="button" disabled={isAuthenticating} onClick={() => { setIsPasswordOpen(false); setPassword(''); setLoginError(''); }} className="flex-1 py-2 border rounded">取消</button>
+                        </div>
+                    </form>
+                </div>
+            )}
             {isMenuOpen && (
                 <div className="fixed inset-0 z-50 flex">
                     <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setIsMenuOpen(false)}></div>
@@ -454,24 +459,25 @@ const ShiftScheduleManager = () => {
                             )}
                         </div>
                         <div className="space-y-3">
+                            {!isEditing && <p className="text-sm text-gray-600">目前為唯讀模式，請點選「編輯班表」以修改。</p>}
                             <button 
                                 onClick={() => { toggleShift(selectedDate); setSelectedDate(null); }} 
                                 className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
-                                disabled={!isConnected}
+                                disabled={!isConnected || !isEditing}
                             >
                                 換班
                             </button>
                             <button 
                                 onClick={() => { togglePending(selectedDate); setSelectedDate(null); }} 
                                 className="w-full py-3 bg-yellow-400 text-gray-900 rounded-lg font-bold hover:bg-yellow-500 transition-colors disabled:bg-gray-400"
-                                disabled={!isConnected}
+                                disabled={!isConnected || !isEditing}
                             >
                                 {pendingDates[selectedDate] ? '取消待確認' : '標記待確認'}
                             </button>
                             <button 
                                 onClick={() => { toggleLocked(selectedDate); setSelectedDate(null); }} 
                                 className="w-full py-3 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition-colors disabled:bg-gray-400"
-                                disabled={!isConnected}
+                                disabled={!isConnected || !isEditing}
                             >
                                 {lockedDates[selectedDate] ? '解除不能換班' : '標記不能換班'}
                             </button>
@@ -502,7 +508,13 @@ const ShiftScheduleManager = () => {
                                 <WifiOff className="w-4 h-4 text-red-300" />
                             )}
                         </div>
-                        <div className="w-8"></div>
+                        <button
+                            onClick={isEditing ? logout : () => { setLoginError(''); setPassword(''); setIsPasswordOpen(true); }}
+                            disabled={isSigningOut}
+                            className="text-xs sm:text-sm px-2 py-1 border border-white rounded hover:bg-indigo-500 disabled:opacity-50"
+                        >
+                            {isSigningOut ? '登出中…' : isEditing ? '完成編輯／登出' : '編輯班表'}
+                        </button>
                     </div>
                     <div className="flex justify-center items-center gap-4">
                         <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-indigo-500 rounded">
