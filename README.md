@@ -66,7 +66,39 @@ npx firebase-tools emulators:exec --project demo-shift-schedule --only database 
 
 本機人工操作 Emulator 時，複製 `.env.example` 為 `.env.local`，設定測試 Email 並保持 `VITE_USE_FIREBASE_EMULATORS=true`，啟動本機 Auth／Database Emulator；測試帳號的 UID 使用上述指定值。此模式強制使用 `demo-shift-schedule`，不沿用正式設定。
 
-**目前不部署 Vercel Preview**：`vercel.json` 停用 `feature/editor-password` 的 Git 自動部署；Vite 遇到 `VERCEL_ENV=preview`，或 `VERCEL=1` 卻未標明 production 時直接停止建置，即使繼承正式 Firebase 設定也不產生預覽產物。不更改 Vercel 正式環境或部署設定。既有 Preview 若先前已存在，不會因這些檔案自動撤除，本輪不使用它做寫入測試。
+**本次不部署 Preview，也不要求另建 Firebase 專案。** `vercel.json` 只停用 `feature/editor-password` 的 Git 自動部署，不影響 main 或其他分支。
+
+未來 Preview 建置可以通過，但必須明確設定隔離專案的 `VITE_FIREBASE_API_KEY`、`VITE_FIREBASE_AUTH_DOMAIN`、`VITE_FIREBASE_DATABASE_URL`、`VITE_FIREBASE_PROJECT_ID` 與 `VITE_FIREBASE_APP_ID`。Auth domain 必須是該專案的 `專案ID.firebaseapp.com`；資料庫須使用該專案對應的標準預設 instance URL（`專案ID.firebaseio.com`、`專案ID-default-rtdb.firebaseio.com` 或 `專案ID-default-rtdb.區域.firebasedatabase.app`）。缺值、正式專案／API Key／App ID、混用 Auth／資料庫或 localhost Emulator 都會拒絕建置。自訂資料庫名稱與自訂 Auth 網域暫不放行，以維持明確可檢查的對應關係。
+
+這是建置設定檢查，不會建立專案或連線驗證雲端資源；Firebase 實際權限仍由各資料庫的 Rules 決定。`VERCEL_ENV=production` 不套用 Preview 檢查，正式建置維持正常；`VERCEL=1` 卻未標明 production 時則保守套用檢查。若從其他系統提供 prebuilt artifacts，仍須先以正確的 `VERCEL_ENV` 執行此建置，不能略過檢查。既有已部署 Preview 不會自動被撤除，本輪不使用它做寫入測試。
+
+## Emulator 不可用時：Console Rules Playground
+
+本環境有 Java 21，但沒有 Firebase CLI／Emulator JAR，離線取得 CLI 回傳 `ENOTCACHED`，網路政策也未開放下載。官方測試目前只到本機連線前置檢查，**沒有執行官方 Rules 引擎案例**。
+
+最簡單的人工替代方式：
+
+1. 開啟 Firebase Console → Realtime Database → Rules，將 PR 的 `database.rules.json` 貼到編輯器，保持**未發布**，開啟 Rules Playground。模擬不會寫入正式資料；不要按 Publish，也不要到 Data 分頁手動建立測試資料。若目前介面無法對未發布草稿模擬，就停止，改在可用環境執行 Emulator，不能為了驗證而發布規則。
+2. 使用下表的 Read／Write、Location、Data 與驗證設定。匿名時關閉 Authenticated；指定／其他帳號時開啟驗證並填入對應 UID。不要輸入真實密碼。若介面不提供自訂 UID，這些授權案例暫時不能驗證。
+3. 以下使用合成日期 `2099-01-01`，只在 Playground 填值。成功的模擬也不會建立該日資料；記錄每項結果，離開時捨棄草稿。
+
+| 模擬 | 路徑與資料 | 身分 | 預期 |
+| --- | --- | --- | --- |
+| Read，各執行一次 | `/shifts`、`/modifiedDates`、`/pendingDates`、`/lockedDates` | 匿名 | 允許 |
+| Write | `/shifts/2099/01/2099-01-01`，`"測試甲"` | 匿名／其他 UID | 拒絕 |
+| Write | 同上，`"測試甲"` | 指定 UID | 允許 |
+| Write，邊界值 | 同上，`""`、`"1234567890123456789"` | 指定 UID | 允許 |
+| Write，非法格式 | 同上，`123`、`{"name":"測試甲"}`、`"12345678901234567890"` | 指定 UID | 拒絕 |
+| Write，刪除班別 | 同上，`null`（不加引號） | 指定 UID | 拒絕 |
+| Write，標記待確認 | `/pendingDates/2099-01-01`，`{"requestedBy":"測試甲","timestamp":"2099-01-01T00:00:00.000Z"}` | 指定 UID；再用匿名／其他 UID 各試一次 | 指定 UID 允許，其餘拒絕 |
+| Write，禁止換班 | `/lockedDates/2099-01-01`，`{"lockedBy":"測試甲","timestamp":"2099-01-01T00:00:00.000Z"}` | 同上 | 同上 |
+| Write，調班紀錄 | `/modifiedDates/2099-01-01`，`{"from":"測試甲","to":"測試乙","modifiedBy":"測試甲","timestamp":"2099-01-01T00:00:00.000Z"}` | 同上 | 同上 |
+| Write，取消標記／清除紀錄 | 以上三個日期紀錄路徑，資料 `null` | 同上 | 同上 |
+| Write，刪除父節點 | `/`、`/shifts`、`/shifts/2099`、`/shifts/2099/01`、`/modifiedDates`、`/pendingDates`、`/lockedDates`，資料 `null`；再用 `{"overwrite":true}` 試覆寫 | 指定 UID | 全部拒絕 |
+
+指定 UID 是 `ceockx7WIPfKWZuyqOaxImBdQ1P2`，其他 UID 可填合成值 `other-test-uid`。
+
+**Playground 的單一路徑 Write 不能代替多路徑 `update()` 的原子性驗證。** 不要把帶有斜線鍵的 JSON 貼到根路徑當成多路徑更新，那是不同請求。本次多路徑授權／整筆成功與拒絕仍需用本機 Emulator 腳本驗證；在完成前，尚未達到正式上線門檻。
 
 ## 環境設定與上線前必要操作
 
@@ -87,9 +119,9 @@ npx firebase-tools emulators:exec --project demo-shift-schedule --only database 
 ## 變更檔案
 
 - `src/App.jsx`：唯讀、密碼對話框、UID 檢查、登出與原操作保護；修正既有 lint、訂閱與初始化問題，換班改為逐日期原子更新。
-- `src/firebase.js`、`src/firebaseConfig.js`：集中既有 SDK 設定與 Auth，加入記憶體登入及本機 Emulator 支援；Preview 建置停止保護。
+- `src/firebase.js`、`src/firebaseConfig.js`：集中既有 SDK 設定與 Auth，加入記憶體登入及本機 Emulator 支援；Preview 隔離設定檢查。
 - `database.rules.json`、`firebase.json`：日期層級 Rules 與本機 Emulator 設定。
-- `vite.config.js`、`vercel.json`：停止此輪 Preview 與工作分支自動部署。
+- `vite.config.js`、`vercel.json`：Preview 僅放行明確隔離設定；此工作分支仍停用自動部署。
 - `.env.example`、`.gitignore`：環境設定範例與忽略本機設定／暫存。
 - `package.json`、`eslint.config.js`、`tests/security.test.mjs`、`tests/browser.mjs`、`tests/firebase.mock.js`、`tests/rules.emulator.mjs`：本機合約、瀏覽器與可選官方 Emulator 測試；無新增產品依賴、無套件鎖檔變更。
 - `README.md`、`TEST_RESULTS.md`：說明與實際測試記錄。

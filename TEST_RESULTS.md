@@ -13,12 +13,15 @@
 | 檢查 | 結果 |
 | --- | --- |
 | `npm run lint` | 通過；未停用原有檢查規則。 |
-| `npm test` | 12 項合約測試通過，範圍如下。 |
+| `npm test` | 15 項合約測試通過，範圍如下。 |
 | `npm run test:browser` | 14 組瀏覽器檢查通過；真正 Firebase Auth SDK 的部分使用攔截的 HTTP 回應，資料庫使用 mock。 |
 | `npm run build` | 通過。 |
-| Vercel Preview／缺少正式環境識別 | 如預期停止建置；包含繼承正式設定與提供合成隔離設定的情況。本輪不產生 Preview。 |
+| 一般與明確 Vercel Production 建置 | 都通過；Production 不受 Preview 檢查限制。 |
+| Preview 缺少設定或指向正式 Firebase | 如預期拒絕建置。 |
+| Preview 完整合成隔離設定 | 通過建置；只驗證設定，未建立或連接任何雲端測試專案、未部署 Preview。 |
+| `VERCEL=1` 未標明環境且未設隔離設定 | 如預期拒絕建置。 |
 | `vercel.json` | 停用 `feature/editor-password` Git 自動部署，未停用 main 的部署。 |
-| `npm run test:rules:emulator` | **未通過環境前置檢查**：本機 Database Emulator 未啟動；沒有 Firebase CLI／Emulator JAR，無法下載。真實 Rules 引擎案例未執行，不能視為通過。 |
+| `npm run test:rules:emulator` | **未通過環境前置檢查**：Java 21 可用，但沒有 Firebase CLI／Emulator JAR；`npm exec --offline --yes firebase-tools -- --version` 回傳 `ENOTCACHED`，網路政策未開放下載。實際再試 `npm run test:rules:emulator` 仍因 `127.0.0.1:9000` 沒有 Emulator 失敗。真實 Rules 引擎案例未執行，不能視為通過。 |
 | `git diff --check` | 通過。 |
 | 提交檔案檢查 | 僅程式、規則、設定範例、合成測試與文件；不含 `.env.local`、密碼、私密金鑰、資料庫匯出或真實班表快照。 |
 
@@ -32,7 +35,7 @@
 6. shifts 只授權原有巢狀日期路徑，舊平面資料仍可公開讀取。
 7. 其他三個節點保留既有物件格式，不加入新的欄位限制。
 8. 換班逐日期更新可授權，混入父節點刪除或非法 shifts 值時拒絕。
-9. 本機 Emulator 強制 demo 專案；Preview 建置停止，工作分支 Git 自動部署停用。
+9. 本機 Emulator 強制 demo 專案；Preview 只放行明確隔離設定，拒絕正式或混用設定，工作分支 Git 自動部署仍停用。
 
 這些是運算式與設定合約測試，**不是完整 Firebase Rules 引擎模擬**；真實的級聯權限與多路徑原子性尚未由官方引擎驗證。
 
@@ -48,5 +51,6 @@ NODE_PATH=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modul
 
 - 官方 Emulator 測試腳本已列出四節點讀取、根／未知節點拒絕、匿名／其他 UID／指定 UID、shifts 型別與邊界、父節點刪除、取消最後標記，以及逐日期更新的整筆成功／失敗案例；需在工具可用的本機補跑，命令見 README。
 - 沒有使用真實 Firebase 帳號密碼驗證雲端設定，沒有修改或發布正式 Rules。
-- 不要求另建測試專案，不部署 Preview。正式上線前另行確認 Auth、Production Email、備份與發布時段。
+- 不要求另建測試專案，不部署 Preview。README 已提供不發布 Rules、不寫入正式資料的 Console Rules Playground 驗證表；Playground 單一路徑模擬不能代替多路徑更新原子性測試。
+- 官方 Rules 與多路徑原子性尚未驗證，因此目前**未達正式上線門檻**。正式上線前另行確認 Auth、Production Email、備份與發布時段。
 - Build 仍有既有 Browserslist 過期及 SDK 納入後單檔超過 500 kB 的提示，皆不是建置錯誤；本輪不升級依賴或加入拆包重構。

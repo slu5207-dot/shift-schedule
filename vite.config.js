@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
   const isPreview = env.VERCEL_ENV === 'preview'
     || env.VERCEL === '1' && env.VERCEL_ENV !== 'production';
-  if (isPreview) assertSafePreview();
+  if (isPreview) assertSafePreview(env);
   return {
     plugins: [react()],
     css: {

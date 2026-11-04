@@ -122,9 +122,43 @@ test('現有公開 Web 設定保留；Emulator 強制使用 demo 專案', () => 
     assert.ok(!JSON.stringify(config).includes('a6daf'));
 });
 
-test('本輪所有 Preview 建置均停止，分支 Git 自動部署已停用', () => {
-    assert.throws(() => assertSafePreview(), /停用 Vercel Preview/);
+const isolated = {
+    VITE_FIREBASE_API_KEY: 'synthetic-test-api-key',
+    VITE_FIREBASE_AUTH_DOMAIN: 'isolated-test.firebaseapp.com',
+    VITE_FIREBASE_DATABASE_URL: 'https://isolated-test-default-rtdb.asia-southeast1.firebasedatabase.app',
+    VITE_FIREBASE_PROJECT_ID: 'isolated-test',
+    VITE_FIREBASE_APP_ID: 'synthetic-test-app-id',
+};
+
+test('Preview 明確隔離設定可建置，不要求實際建立專案', () => {
+    assert.doesNotThrow(() => assertSafePreview(isolated));
+    assert.doesNotThrow(() => assertSafePreview({ ...isolated, VITE_FIREBASE_DATABASE_URL: 'https://isolated-test.firebaseio.com' }));
+    assert.doesNotThrow(() => assertSafePreview({ ...isolated, VITE_FIREBASE_DATABASE_URL: 'https://isolated-test-default-rtdb.firebaseio.com' }));
+});
+
+test('Preview 缺少任何必要設定或使用 localhost Emulator 時拒絕建置', () => {
+    assert.throws(() => assertSafePreview({}));
+    for (const key of Object.keys(isolated)) assert.throws(() => assertSafePreview({ ...isolated, [key]: ' ' }));
+    assert.throws(() => assertSafePreview({ ...isolated, VITE_USE_FIREBASE_EMULATORS: 'true' }));
+});
+
+test('Preview 拒絕混用正式設定、其他專案資料庫與非標準連線位址', () => {
+    const production = getFirebaseConfig({});
+    for (const override of [
+        { VITE_FIREBASE_PROJECT_ID: production.projectId },
+        { VITE_FIREBASE_API_KEY: production.apiKey },
+        { VITE_FIREBASE_APP_ID: production.appId },
+        { VITE_FIREBASE_AUTH_DOMAIN: production.authDomain },
+        { VITE_FIREBASE_DATABASE_URL: production.databaseURL },
+        { VITE_FIREBASE_DATABASE_URL: 'https://other-test.firebaseio.com' },
+        { VITE_FIREBASE_DATABASE_URL: 'http://isolated-test.firebaseio.com' },
+        { VITE_FIREBASE_DATABASE_URL: 'https://isolated-test.firebaseio.com/path' },
+        { VITE_FIREBASE_DATABASE_URL: 'https://isolated-test.firebaseio.com?ns=shift-schedule-a6daf' },
+        { VITE_FIREBASE_DATABASE_URL: 'https://user:password@isolated-test.firebaseio.com' },
+    ]) assert.throws(() => assertSafePreview({ ...isolated, ...override }));
+});
+
+test('本分支仍停用自動部署，不影響 main 與未來其他開發分支', () => {
     const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url)));
-    assert.equal(config.git.deploymentEnabled['feature/editor-password'], false);
-    assert.equal(config.git.deploymentEnabled.main, undefined);
+    assert.deepEqual(config.git.deploymentEnabled, { 'feature/editor-password': false });
 });
