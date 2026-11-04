@@ -1,0 +1,46 @@
+name: Firebase Rules and existing checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Build, lint and contract tests
+        run: |
+          npm run build
+          npm run lint
+          npm test
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools@14.26.0
+      - name: Official Realtime Database Rules tests (demo only)
+        run: firebase emulators:exec --non-interactive --only database --project demo-shift-schedule "npm run test:rules:emulator"
+      - name: Browser mock tests
+        env:
+          NODE_PATH: ${{ runner.temp }}/shift-browser-tools/node_modules
+        run: |
+          npm install --prefix "$RUNNER_TEMP/shift-browser-tools" --no-save playwright@1.56.1
+          "$RUNNER_TEMP/shift-browser-tools/node_modules/.bin/playwright" install --with-deps chromium
+          export CHROMIUM_PATH="$(node -p "require('playwright').chromium.executablePath()")"
+          npm run test:browser
