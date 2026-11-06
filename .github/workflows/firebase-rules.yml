@@ -1,0 +1,62 @@
+name: Firebase Rules and existing checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Dependency audit reports
+        run: |
+          npm audit --json > "$RUNNER_TEMP/audit-all.json" || audit_all_exit=$?
+          npm audit --omit=dev --json > "$RUNNER_TEMP/audit-runtime.json" || audit_runtime_exit=$?
+          test "${audit_all_exit:-0}" -le 1
+          test "${audit_runtime_exit:-0}" -le 1
+          node <<'NODE'
+          const fs = require('node:fs');
+          for (const kind of ['all', 'runtime']) {
+            const report = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/audit-${kind}.json`, 'utf8'));
+            if (report.error || !report.metadata) throw new Error('Audit service did not return a valid report');
+            console.log(`AUDIT_REPORT:${kind}:${JSON.stringify(report)}`);
+          }
+          NODE
+      - name: Build, lint and contract tests
+        run: |
+          npm run build
+          npm run lint
+          npm test
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools@14.26.0
+      - name: Official Realtime Database Rules tests (demo only)
+        run: firebase emulators:exec --non-interactive --only database --project demo-shift-schedule "npm run test:rules:emulator"
+      - name: Browser mock tests
+        timeout-minutes: 5
+        env:
+          NODE_PATH: ${{ runner.temp }}/shift-browser-tools/node_modules
+          CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          test -x "$CHROMIUM_PATH"
+          "$CHROMIUM_PATH" --version
+          npm install --prefix "$RUNNER_TEMP/shift-browser-tools" --no-save playwright@1.56.1
+          npm run test:browser

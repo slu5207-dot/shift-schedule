@@ -1,0 +1,35 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "shifts": {
+      ".read": true,
+      "$year": {
+        "$month": {
+          "$date": {
+            ".validate": "newData.isString() && newData.val().length < 20",
+            ".write": "auth != null && auth.uid === 'ceockx7WIPfKWZuyqOaxImBdQ1P2' && newData.exists()"
+          }
+        }
+      }
+    },
+    "modifiedDates": {
+      ".read": true,
+      "$date": {
+        ".write": "auth != null && auth.uid === 'ceockx7WIPfKWZuyqOaxImBdQ1P2'"
+      }
+    },
+    "pendingDates": {
+      ".read": true,
+      "$date": {
+        ".write": "auth != null && auth.uid === 'ceockx7WIPfKWZuyqOaxImBdQ1P2'"
+      }
+    },
+    "lockedDates": {
+      ".read": true,
+      "$date": {
+        ".write": "auth != null && auth.uid === 'ceockx7WIPfKWZuyqOaxImBdQ1P2'"
+      }
+    }
+  }
+}

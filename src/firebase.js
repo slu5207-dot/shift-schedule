@@ -1,18 +1,18 @@
-// src/firebase.js
-import { initializeApp } from "firebase/app";
-import { getDatabase } from "firebase/database";
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/auth';
+import 'firebase/compat/database';
+import { getFirebaseConfig } from './firebaseConfig';
 
-const firebaseConfig = {
-    apiKey: "AIzaSyBmSPNAl4MLOePqArUFHaIXPsv-26a4cBo",
-    authDomain: "shift-schedule-a6daf.firebaseapp.com",
-    databaseURL: "https://shift-schedule-a6daf-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "shift-schedule-a6daf",
-    storageBucket: "shift-schedule-a6daf.firebasestorage.app",
-    messagingSenderId: "780365132523",
-    appId: "1:780365132523:web:d7ffaecf9dd33037fe44ae"
-};
+// 沿用原本的 ref / on / set 介面，避免更動既有資料與排班操作。
+const app = firebase.initializeApp(getFirebaseConfig(import.meta.env));
+export const db = app.database();
+export const auth = app.auth();
 
-// 初始化 Firebase
-const app = initializeApp(firebaseConfig);
-// 取得資料庫實體
-export const db = getDatabase(app);
+if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
+    auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
+    db.useEmulator('127.0.0.1', 9000);
+}
+
+// 不保留登入憑證；每次重新載入網站都回到唯讀。
+export const authReady = auth.setPersistence(firebase.auth.Auth.Persistence.NONE)
+    .then(() => auth.signOut());
