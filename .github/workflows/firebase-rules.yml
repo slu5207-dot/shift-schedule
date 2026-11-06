@@ -35,71 +35,10 @@ jobs:
           test "${audit_runtime_exit:-0}" -le 1
           node <<'NODE'
           const fs = require('node:fs');
-          const { execFileSync } = require('node:child_process');
           for (const kind of ['all', 'runtime']) {
             const report = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/audit-${kind}.json`, 'utf8'));
             if (report.error || !report.metadata) throw new Error('Audit service did not return a valid report');
             console.log(`AUDIT_REPORT:${kind}:${JSON.stringify(report)}`);
-            if (kind === 'all') {
-              for (const name of Object.keys(report.vulnerabilities)) {
-                console.log(`AUDIT_PATHS:${name}:${JSON.stringify(JSON.parse(execFileSync('npm', ['explain', name, '--json'], { encoding: 'utf8' })))}`);
-              }
-            }
-          }
-          NODE
-      - name: Resolve minimal lockfile candidate (assessment only)
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const assert = require('node:assert/strict');
-          const semver = require('semver');
-          const { execFileSync } = require('node:child_process');
-          const audit = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/audit-all.json`, 'utf8'));
-          const originalPackage = fs.readFileSync('package.json', 'utf8');
-          const originalLock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-          const fixed = {};
-          for (const [name, vulnerability] of Object.entries(audit.vulnerabilities)) {
-            const versions = JSON.parse(execFileSync('npm', ['view', name, 'versions', '--json'], { encoding: 'utf8' }));
-            const installed = [...new Set(vulnerability.nodes.map(path => originalLock.packages[path].version))];
-            const fixes = installed.map(current => ({ current, fixed: versions.filter(version => semver.valid(version) && !semver.prerelease(version) && semver.major(version) === semver.major(current) && !semver.satisfies(version, vulnerability.range)).sort(semver.compare)[0] || null }));
-            console.log(`AUDIT_FIX_VERSIONS:${name}:${JSON.stringify(fixes)}`);
-            if (['protobufjs', 'websocket-driver', '@protobufjs/utf8'].includes(name)) fixed[name] = fixes[0].fixed;
-          }
-          assert.equal(Object.keys(fixed).length, 3);
-          for (const entry of Object.values(originalLock.packages)) {
-            for (const [name, version] of Object.entries(fixed)) {
-              if (entry.dependencies?.[name]) assert.ok(semver.satisfies(version, entry.dependencies[name]), `${name} would violate its consumer range`);
-            }
-          }
-          const candidate = JSON.parse(originalPackage);
-          assert.equal(candidate.overrides, undefined);
-          candidate.overrides = fixed;
-          fs.writeFileSync('package.json', JSON.stringify(candidate, null, 2) + '\n');
-          execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'], { stdio: 'inherit' });
-          fs.writeFileSync('package.json', originalPackage);
-          execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'], { stdio: 'inherit' });
-          assert.equal(fs.readFileSync('package.json', 'utf8'), originalPackage);
-          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-          const changes = {};
-          for (const path of new Set([...Object.keys(originalLock.packages), ...Object.keys(lock.packages)])) {
-            if (originalLock.packages[path]?.version !== lock.packages[path]?.version) {
-              assert.ok(Object.keys(fixed).some(name => path.endsWith(`/node_modules/${name}`) || path === `node_modules/${name}`) || path.startsWith('node_modules/@protobufjs/'), `Unexpected version change: ${path}`);
-            }
-            if (JSON.stringify(originalLock.packages[path]) !== JSON.stringify(lock.packages[path])) changes[path] = lock.packages[path] || null;
-          }
-          console.log(`LOCK_PATCH_JSON:${JSON.stringify({ packages: changes })}`);
-          NODE
-          npm ci
-          npm audit --json > "$RUNNER_TEMP/candidate-all.json" || candidate_all_exit=$?
-          npm audit --omit=dev --json > "$RUNNER_TEMP/candidate-runtime.json" || candidate_runtime_exit=$?
-          test "${candidate_all_exit:-0}" -le 1
-          test "${candidate_runtime_exit:-0}" -le 1
-          node <<'NODE'
-          const fs = require('node:fs');
-          for (const kind of ['all', 'runtime']) {
-            const data = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/candidate-${kind}.json`, 'utf8'));
-            if (data.error || !data.metadata) throw new Error('Invalid candidate audit response');
-            console.log(`CANDIDATE_AUDIT:${kind}:${JSON.stringify(data)}`);
           }
           NODE
       - name: Build, lint and contract tests

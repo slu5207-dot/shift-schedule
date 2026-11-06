@@ -108,6 +108,10 @@ Codex 執行環境仍受下載限制，但官方 Emulator 已改在 GitHub Actio
 
 **Playground 的單一路徑 Write 不能代替多路徑 `update()` 的原子性驗證。** 不要把帶有斜線鍵的 JSON 貼到根路徑當成多路徑更新，那是不同請求。本次已由 Actions 的官方 Emulator 驗證多路徑更新成功與整筆拒絕，不再以合約測試代替官方驗證。
 
+## 依賴評估與上線 SOP
+
+2026-11-06 已完成兩份 audit 與最小傳遞依賴鎖檔修補：完整 22 → 19 項、Critical 2 → 0；排除 dev 後 4 → 1 項。剩餘警告不在正式瀏覽器產物，接受條件見 [依賴安全評估](DEPENDENCY_SECURITY_REVIEW.md)。結論為目前靜態部署範圍內 **GO**；實際發布仍需使用者核准。正式操作以 [六步 SOP](PRODUCTION_SOP.md) 為準。
+
 ## 環境設定與上線前必要操作
 
 `VITE_EDITOR_EMAIL` 是指定 UID 的 Email，不是密碼。`VITE_*` 會進入瀏覽器，不能放密碼、服務帳戶或私密金鑰。Firebase Web API Key、專案 ID 與 UID 是既有公開識別設定。
@@ -116,7 +120,7 @@ Codex 執行環境仍受下載限制，但官方 Emulator 已改在 GitHub Actio
 
 正式上線前需由使用者／管理者完成：
 
-1. 審查 Draft PR 與 Actions 結果。官方 Rules 驗證已完成；另外評估 `npm ci` 回報的既有依賴弱點（含 critical），本次未升級產品依賴。無需手動安裝 Emulator 或新增 Firebase 專案。
+1. 審查 Draft PR 與最新 Actions。官方 Rules 已驗證；依賴評估與最小鎖檔修補已完成，Critical 為 0，剩餘 19 項接受理由與 GO 範圍見 DEPENDENCY_SECURITY_REVIEW.md。正式發布依 PRODUCTION_SOP.md 執行，仍需另外核准。
 2. 確認正式 Authentication 已啟用 Email／Password，指定 UID 的 Email 正確；在 Vercel **Production** 設定 `VITE_EDITOR_EMAIL`，並關閉或移除 `VITE_USE_FIREBASE_EMULATORS`。不把密碼放進環境變數。
 3. 另外確認正式上線時段。備份目前資料與 Rules，再由管理者在正式專案發布本次 Rules。優先用 Rules Simulator 驗證，不為測試修改正式班表。
 4. Rules 生效後才依核准流程合併至 `main` 並正式發布前端。這兩步之間舊網站仍可閱讀，但未登入編輯會被拒絕，需安排短暫停止編輯。
@@ -131,6 +135,7 @@ Codex 執行環境仍受下載限制，但官方 Emulator 已改在 GitHub Actio
 - `database.rules.json`、`firebase.json`：日期層級 Rules 與本機 Emulator 設定。
 - `vite.config.js`、`vercel.json`：Preview 僅放行明確隔離設定；此工作分支仍停用自動部署。
 - `.env.example`、`.gitignore`：環境設定範例與忽略本機設定／暫存。
-- `package.json`、`eslint.config.js`、`tests/security.test.mjs`、`tests/browser.mjs`、`tests/firebase.mock.js`、`tests/rules.emulator.mjs`：合約、瀏覽器與官方 Emulator 測試；無新增產品依賴、無套件鎖檔變更。
+- `package.json`、`eslint.config.js`、`tests/security.test.mjs`、`tests/browser.mjs`、`tests/firebase.mock.js`、`tests/rules.emulator.mjs`：合約、瀏覽器與官方 Emulator 測試；無新增產品依賴。package-lock.json 僅更新 protobuf/WebSocket 的 Node 依賴鏈及 npm metadata，產品套件範圍不變。
 - `.github/workflows/firebase-rules.yml`：以唯讀權限在 PR 自動執行官方 Emulator 與既有檢查。
 - `README.md`、`TEST_RESULTS.md`：說明與實際測試記錄。
+- `DEPENDENCY_SECURITY_REVIEW.md`、`PRODUCTION_SOP.md`：22 項弱點的完整評估、GO 建議與最精簡上線／回復步驟。

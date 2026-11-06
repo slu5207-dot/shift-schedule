@@ -2,7 +2,15 @@
 
 日期：2026-11-04（Asia/Taipei）。基準提交：`55a159d093777d7dc1e5fdfeca8daf715739b862`。
 
-## GitHub Actions 實際結果
+## 2026-11-06 依賴安全複查
+
+兩份 npm audit --json／--omit=dev --json 已在 Actions 實際執行，[基準報告](https://github.com/slu5207-dot/shift-schedule/actions/runs/42154828194)為 22 項／4 項。[最小修補候選](https://github.com/slu5207-dot/shift-schedule/actions/runs/42156015270)為 19 項／1 項，Critical 均為 0，完整既有檢查也通過。兩份 audit 日後保留在原 workflow，最終已提交鎖檔以 PR 最新 verify 為準。
+
+僅更新 protobufjs 7.6.5、websocket-driver 0.7.5 及 protobuf 必要 helpers（包含 utf8 1.1.1），沒有改產品套件範圍、Firebase Rules、排班或登入程式。臨時候選產生的版本範圍檢查曾因 protobuf 需要更新自己的 codegen helper 而停止；確認僅限同鏈 helpers 後重跑成功，該一次性步驟已移除。
+
+全部 22 項的漏洞編號、依賴路徑、版本、觸發條件與殘餘風險見 DEPENDENCY_SECURITY_REVIEW.md。結論為目前 Vite 靜態部署用途 **GO**，不是對未來 SSR／Node 服務或任意開發環境的承諾；發布步驟見 PRODUCTION_SOP.md。本次未使用 npm audit fix --force。
+
+## 2026-11-04 GitHub Actions 實際結果（歷史紀錄）
 
 [首次全部通過的執行紀錄](https://github.com/slu5207-dot/shift-schedule/actions/runs/41843177693)，測試提交 `5a75fc410d3a9c76ea225b823fe9de2c62d9ba41`。已讀取 job 步驟及完整紀錄，確認 run 為 `completed / success`。
 
@@ -42,9 +50,9 @@ Runner 是 GitHub-hosted Ubuntu 24.04，專案命令使用 Node.js 22.23.4、Jav
 
 前一階段的建置矩陣也已通過：一般與明確 Vercel Production 可建置；完整合成隔離 Preview 設定可建置；缺值或正式／混用 Firebase 設定被拒絕。本輪未修改 Preview 保護，`feature/editor-password` 的 Git 自動部署仍停用，沒有部署 Preview。
 
-## 剩餘風險與正式上線
+## 2026-11-04 當時的剩餘風險（已由上方複查更新）
 
-- `npm ci` 實際回報 **22 項既有依賴弱點：1 low、6 moderate、13 high、2 critical**。這是整個鎖檔的稽核摘要，尚未區分產品執行期與開發工具的影響，本輪沒有升級依賴或執行 `npm audit fix`。正式上線審查仍應評估及處理；不能由本次測試成功推論漏洞已排除。
+- `npm ci` 實際回報 **22 項既有依賴弱點：1 low、6 moderate、13 high、2 critical**。這是整個鎖檔的稽核摘要，尚未區分產品執行期與開發工具的影響，當時沒有升級依賴；2026-11-06 已完成評估及小範圍鎖檔修補，最新風險接受結論見 DEPENDENCY_SECURITY_REVIEW.md。
 - Build 仍有 Browserslist 過期及單檔超過 500 kB 的提示，皆非建置錯誤。
 - 真實 Firebase Email／Password 帳號、正式 Vercel 環境變數及已發布 Rules 的串接沒有在本次測試；不使用正式憑證，也不對正式班表做寫入驗收。
 - 本次要求的官方 Rules 與既有自動化測試已完成。PR 仍是 Draft；整體正式上線仍待依賴風險評估、正式 Auth／Email 設定確認、備份、審查與另外授權。沒有合併 main、發布正式 Rules 或部署任何網站。
