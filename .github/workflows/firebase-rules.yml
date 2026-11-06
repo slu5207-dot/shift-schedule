@@ -51,10 +51,12 @@ jobs:
       - name: Official Realtime Database Rules tests (demo only)
         run: firebase emulators:exec --non-interactive --only database --project demo-shift-schedule "npm run test:rules:emulator"
       - name: Browser mock tests
+        timeout-minutes: 5
         env:
           NODE_PATH: ${{ runner.temp }}/shift-browser-tools/node_modules
+          CHROMIUM_PATH: /usr/bin/google-chrome
         run: |
+          test -x "$CHROMIUM_PATH"
+          "$CHROMIUM_PATH" --version
           npm install --prefix "$RUNNER_TEMP/shift-browser-tools" --no-save playwright@1.56.1
-          "$RUNNER_TEMP/shift-browser-tools/node_modules/.bin/playwright" install --with-deps chromium
-          export CHROMIUM_PATH="$(node -p "require('playwright').chromium.executablePath()")"
           npm run test:browser
