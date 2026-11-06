@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node tests/security.test.mjs",
+    "test": "node --test tests/security.test.mjs tests/calendar.test.mjs",
     "test:browser": "node tests/browser.mjs",
     "test:rules:emulator": "node tests/rules.emulator.mjs"
   },
