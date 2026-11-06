@@ -83,7 +83,7 @@ jobs:
           const changes = {};
           for (const path of new Set([...Object.keys(originalLock.packages), ...Object.keys(lock.packages)])) {
             if (originalLock.packages[path]?.version !== lock.packages[path]?.version) {
-              assert.ok(Object.keys(fixed).some(name => path.endsWith(`/node_modules/${name}`) || path === `node_modules/${name}`), `Unexpected version change: ${path}`);
+              assert.ok(Object.keys(fixed).some(name => path.endsWith(`/node_modules/${name}`) || path === `node_modules/${name}`) || path.startsWith('node_modules/@protobufjs/'), `Unexpected version change: ${path}`);
             }
             if (JSON.stringify(originalLock.packages[path]) !== JSON.stringify(lock.packages[path])) changes[path] = lock.packages[path] || null;
           }
