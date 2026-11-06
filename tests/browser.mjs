@@ -48,7 +48,7 @@ try {
     const check = message => { console.log(`PASS ${message}`); checks++; };
     const dateCell = () => page.locator('div.grid.grid-cols-7 > div').filter({ has: page.locator('div.absolute.top-0\\.5.right-1', { hasText: /^4$/ }) });
     const openDate = async () => { await dateCell().click(); await page.getByRole('heading', { name: '2026-11-04' }).waitFor(); };
-    const closeDate = async () => { await page.getByRole('heading', { name: '2026-11-04' }).locator('..').getByRole('button').click(); };
+    const closeDate = async () => { await page.getByRole('heading', { name: '2026-11-04' }).locator('../..').getByRole('button').click(); };
     const countWrites = () => page.evaluate(() => window.__testFirebase.writes.length);
     const login = async password => {
         await page.getByRole('button', { name: '編輯班表', exact: true }).click();

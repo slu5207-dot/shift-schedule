@@ -3,28 +3,7 @@ import { AlertCircle, ChevronLeft, ChevronRight, Repeat, X, Menu, Wifi, WifiOff,
 
 import { db as database, auth, authReady } from './firebase';
 import { EDITOR_UID } from './firebaseConfig';
-
-function generateInitialShifts() {
-    const schedule = {};
-    const knownBaseDate = new Date(2025, 9, 2); 
-    const pattern = ['靖翰', '靖翰', '宇軒', '宇軒'];
-    const startDate = new Date(2025, 0, 1);
-    const endDate = new Date(2026, 11, 31);
-    let currentDate = new Date(startDate);
-    
-    while (currentDate <= endDate) {
-        const year = currentDate.getFullYear();
-        const month = String(currentDate.getMonth() + 1).padStart(2, '0');
-        const day = String(currentDate.getDate()).padStart(2, '0');
-        const dateKey = `${year}-${month}-${day}`;
-        const timeDiff = currentDate.getTime() - knownBaseDate.getTime();
-        const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-        const patternIndex = ((daysDiff % 4) + 4) % 4;
-        schedule[dateKey] = pattern[patternIndex];
-        currentDate.setDate(currentDate.getDate() + 1);
-    }
-    return schedule;
-}
+import { generateInitialShifts, HOLIDAYS, FIRST_YEAR, LAST_YEAR } from './calendarData';
 
 const ShiftScheduleManager = () => {
     const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('currentUser') || '宇軒');
@@ -49,10 +28,7 @@ const ShiftScheduleManager = () => {
     const editorEmail = import.meta.env.VITE_EDITOR_EMAIL?.trim();
     const [isStatsVisible, setIsStatsVisible] = useState(true);
 
-    const holidays = useMemo(() => ({
-        '2025-01-01': '元旦', '2025-01-28': '除夕', '2025-01-29': '春節', '2025-02-28': '和平紀念日',
-        '2025-04-04': '兒童節', '2025-04-05': '清明節', '2025-05-31': '端午節', '2025-10-10': '國慶日'
-    }), []);
+    const holidays = HOLIDAYS;
 
     const originalShifts = useMemo(() => generateInitialShifts(), []);
     const daysInMonth = useMemo(() => new Date(selectedYear, selectedMonth, 0).getDate(), [selectedYear, selectedMonth]);
@@ -293,8 +269,8 @@ const ShiftScheduleManager = () => {
         let newYear = selectedYear;
         if (newMonth > 12) { newMonth = 1; newYear++; }
         else if (newMonth < 1) { newMonth = 12; newYear--; }
-        if (newYear < 2025) { newYear = 2025; newMonth = 1; }
-        else if (newYear > 2026) { newYear = 2026; newMonth = 12; }
+        if (newYear < FIRST_YEAR) { newYear = FIRST_YEAR; newMonth = 1; }
+        else if (newYear > LAST_YEAR) { newYear = LAST_YEAR; newMonth = 12; }
         setSelectedMonth(newMonth);
         setSelectedYear(newYear);
     };
@@ -345,7 +321,7 @@ const ShiftScheduleManager = () => {
                         {person}
                     </div>
 
-                    {holiday && <div className="absolute bottom-0.5 right-1 text-xs">🎉</div>}
+                    {holiday && <div className="absolute bottom-0.5 right-1 max-w-[95%] truncate rounded bg-rose-100/95 px-1 text-[9px] leading-4 text-rose-800 sm:text-[11px]" title={holiday.name}>{holiday.label}</div>}
 
                     {(isModified || isPending || isLocked) && (
                         <div className="absolute top-0.5 left-0.5 flex gap-0.5">
@@ -424,7 +400,7 @@ const ShiftScheduleManager = () => {
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={() => setSelectedDate(null)}>
                     <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-between items-start mb-4">
-                            <h3 className="text-2xl font-bold">{selectedDate}</h3>
+                            <div><h3 className="text-2xl font-bold">{selectedDate}</h3>{holidays[selectedDate] && <p className="mt-1 text-sm font-semibold text-rose-700">國定假日／補假：{holidays[selectedDate].name}</p>}</div>
                             <button onClick={() => setSelectedDate(null)} className="p-2"><X className="w-6 h-6" /></button>
                         </div>
                         <div className="mb-4 p-4 bg-blue-50 rounded-lg">
