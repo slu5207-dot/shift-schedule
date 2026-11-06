@@ -1,6 +1,6 @@
 // 官方政府辦公日曆僅作「日期標記」參考，不改變兩人實際輪班、休假或薪資認定。
 // 2026: https://www.dgpa.gov.tw/information?pid=12574&uid=82
-// 2027: https://www.dgpa.gov.tw/information?pid=12982&uid=30
+// 2027: https://www.dgpa.gov.tw/information?pid=12983&uid=2
 // 只收錄全國性放假紀念日、節日與政府公告之補假；不將所有週末標為國定假日。
 export const FIRST_YEAR = 2025;
 export const LAST_YEAR = 2027;
